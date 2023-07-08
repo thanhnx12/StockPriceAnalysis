@@ -14,12 +14,16 @@ from xgboost import XGBRegressor
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.metrics import r2_score, mean_absolute_error
+import cufflinks as cf
+from elasticsearch import Elasticsearch
 
+es = Elasticsearch(['http://34.36.145.14:80'],timeout=60)
+if not es.ping():
+    raise ValueError("Connection failed")
+index_name = "nhom8"
 
-
-st.title('Stock Price Predictions')
-st.sidebar.info('Welcome to the Stock Price Prediction App. Choose your options below')
-st.sidebar.info("Created and designed by [Jonaben](https://www.linkedin.com/in/jonathan-ben-okah-7b507725b)")
+st.title('Stock Price Analysis')
+st.sidebar.info("Group 8")
 
 def main():
     option = st.sidebar.selectbox('Make a choice', ['Visualize','Recent Data', 'Predict'])
@@ -31,18 +35,37 @@ def main():
         predict()
 
 
+def read_stock_data(es_server,index_name, symbol, start_date, end_date):
+    query = {
+        "query": {
+            "bool": {
+                "must": [
+                    {"term": {"symbol": symbol}},
+                    {"range": {"time": {"gte": start_date, "lte": end_date}}}
+                ]
+            }
+        },
+        "size": 10000  # Adjust the size as needed
+    }
 
+    res = es.search(index=index_name, body=query)
+    hits = res['hits']['hits']
+    data = [hit['_source'] for hit in hits]
+    df = pd.DataFrame(data)
+    return df
 @st.cache_resource
 def download_data(op, start_date, end_date):
-    df = yf.download(op, start=start_date, end=end_date, progress=False)
+    df = read_stock_data(es_server=es,index_name = index_name, symbol= op,start_date=start_date.strftime('%Y-%m-%d'),end_date=end_date.strftime('%Y-%m-%d'))
+    df = df.rename(columns={"open": "Open", "high": "High","low" : "Low" , "close" : "Close", "volume" : "Volume", "time" : "Date"})
+    #print(df)
     return df
 
 
 
-option = st.sidebar.text_input('Enter a Stock Symbol', value='SPY')
+option = st.sidebar.text_input('Enter a Stock Symbol', value='GMD')
 option = option.upper()
 today = datetime.date.today()
-duration = st.sidebar.number_input('Enter the duration', value=3000)
+duration = st.sidebar.number_input('Enter the duration', value=300)
 before = today - datetime.timedelta(days=duration)
 start_date = st.sidebar.date_input('Start Date', value=before)
 end_date = st.sidebar.date_input('End date', today)
@@ -61,7 +84,7 @@ scaler = StandardScaler()
 
 def tech_indicators():
     st.header('Technical Indicators')
-    option = st.radio('Choose a Technical Indicator to Visualize', ['Close', 'BB', 'MACD', 'RSI', 'SMA', 'EMA'])
+    option = st.radio('Choose a Technical Indicator to Visualize', [ 'BB','Close', 'MACD', 'RSI', 'SMA', 'EMA'])
 
     # Bollinger bands
     bb_indicator = BollingerBands(data.Close)
@@ -84,7 +107,10 @@ def tech_indicators():
         st.line_chart(data.Close)
     elif option == 'BB':
         st.write('BollingerBands')
-        st.line_chart(bb)
+        qf=cf.QuantFig(data,title='Bollinger Bands',legend='top',name='GS')
+        qf.add_bollinger_bands()
+        fig = qf.iplot(asFigure=True)
+        st.plotly_chart(fig)
     elif option == 'MACD':
         st.write('Moving Average Convergence Divergence')
         st.line_chart(macd)

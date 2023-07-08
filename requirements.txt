@@ -1,7 +1,6 @@
 streamlit
 scikit-learn
-yfinance
+vnstock
 pandas
-ta
-xgboost
+cufflinks
 
